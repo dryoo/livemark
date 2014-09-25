@@ -6,10 +6,10 @@ This plugin will put a watermark on your images on-the-fly and caches the result
 
 based on [iReflect Plugin]( https://github.com/i-net-software/dokuwiki-plugin-reflect)
 
-license    GPL 2 (http://www.gnu.org/licenses/gpl.html)
-author     s c yoo <dryoo@live.com>
-name   livemark
-url    http://openwiki.kr/tech/livemark
+  - license    GPL 2 (http://www.gnu.org/licenses/gpl.html)
+  - author     s c yoo <dryoo@live.com>
+  - name   livemark
+  - url    http://openwiki.kr/tech/livemark
 
 Puts watermark on the image.
 
