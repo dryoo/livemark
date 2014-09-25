@@ -14,3 +14,10 @@ url    http://openwiki.kr/tech/livemark
 Puts watermark on the image.
 
 project home page... 
+
+
+![Settings](http://i.imgur.com/pcJP2DX.jpg)
+
+
+
+![Result](http://i.imgur.com/3cJsTfL.jpg)
