@@ -5,4 +5,4 @@ author s c yoo
 email  dryoo@Live.com
 date   2014-03-03
 name   livemark
-url    http://vaslor.net/tech/livemark
+url    http://openwiki.kr/tech/livemark
