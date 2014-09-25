@@ -3,6 +3,7 @@
 base   livemark
 author s c yoo
 email  dryoo@Live.com
-date   2014-03-03
+date   2014-09-25
 name   livemark
+desc   This plugin will put a watermark on your images on-the-fly and caches the results. Orginal images are preserved.
 url    http://openwiki.kr/tech/livemark
