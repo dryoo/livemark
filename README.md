@@ -1,7 +1,7 @@
 Livemark plugin
 ===============
 
-This plugin will put a watermark on your images on-the-fly and caches the results.
+This plugin will put a watermark on your images on-the-fly and caches the results. Orginal images are preserved.
 
 
 based on [iReflect Plugin]( https://github.com/i-net-software/dokuwiki-plugin-reflect)
