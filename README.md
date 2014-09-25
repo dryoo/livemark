@@ -1,7 +1,7 @@
 Livemark plugin
 ===============
 
-
+This plugin will put a watermark on your images on-the-fly and caches the results.
 
 
 based on [iReflect Plugin]( https://github.com/i-net-software/dokuwiki-plugin-reflect)
@@ -13,7 +13,7 @@ url    http://openwiki.kr/tech/livemark
 
 Puts watermark on the image.
 
-project home page... 
+project home page... https://www.dokuwiki.org/plugin:livemark
 
 
 ![Settings](http://i.imgur.com/pcJP2DX.jpg)
