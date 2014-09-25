@@ -55,6 +55,7 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin {
 		$type = $image_details[2];
 		$mime = $image_details['mime'];
 
+        if ($width<$this->getConf('minsize')) return false;
 		//	Detect the source image format
 		switch ($type)
 		{
@@ -87,30 +88,22 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin {
 	
 	function imagewatermark($src_img, $src_width, $src_height) {
         global $conf;
-		// Create Reflected Object
+		// Create Object
 		$marked = imagecreatetruecolor($src_width, $src_height);
-		//imagealphablending($marked, true);
-		//imagesavealpha($marked, true);     
 		
 		// Copy Source
 		imagecopy($marked, $src_img, 0, 0, 0, 0, $src_width, $src_height);
-
-		if ($src_width>290) // only work with larger than 300px
-		{
-			$watermark =imagecreatefrompng('../plugins/livemark/livemarkl.png');
-						//imageAlphaBlending($watermark, false);
-						//imagesavealpha($watermark, true); 
+	
+			$watermark =imagecreatefrompng($this->getConf('watermark_path'));//'../plugins/livemark/livemark.png');
 
 			$size=$this->getConf('size')/100;
 			$ratio=$src_width/imagesx($watermark)*$size;
 		    $watermark_width = imagesx($watermark)*$ratio;  
 	        $watermark_height = imagesy($watermark)*$ratio;  
-			$dest_x = ($src_width - $watermark_width)/2;  
-			$dest_y = ($src_height - $watermark_height)/2+ $src_height*0.2;  
+			$dest_x = ($src_width - $watermark_width)/2-$src_width*(0.5-$this->getConf('horizontal')/100);  
+			$dest_y = ($src_height - $watermark_height)/2-$src_height*(0.5-$this->getConf('vertical')/100);  
 			imagecopyresampled($marked, $watermark,  $dest_x, $dest_y, 0, 0, $watermark_width, $watermark_height, imagesx($watermark),  imagesy($watermark));
-    		//imagecopy($marked, $watermark, $dest_x, $dest_y, 0, 0, $watermark_width, $watermark_height);
-	   		//imagecopymerge($marked, $watermark, $dest_x, $dest_y, 0, 0, $watermark_width, $watermark_height, $opacity);
-		}   	 	
+		 	 	
 		return $marked;
 	}
 }
