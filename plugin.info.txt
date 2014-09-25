@@ -1,0 +1,8 @@
+﻿# General Plugin Info do not edit
+
+base   livemark
+author s c yoo
+email  dryoo@Live.com
+date   2014-03-03
+name   livemark
+url    http://vaslor.net/tech/livemark
