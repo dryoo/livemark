@@ -23,7 +23,7 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin {
 	function livemark__livemark(&$event, $args) {
 		if (extension_loaded('gd') == false && !@dl('gd.so')) { return; }
 		$data = $event->data;
-		if ($data['ext']=='jpg') //||  $data['ext']=='png') 
+		if ($data['ext']=='jpg' ||  $data['ext']=='png') 
 		{
         	$ext=$data['ext'];
 			$cacheFile = getCacheName($data['file'],".media.watermark.$ext");
@@ -88,11 +88,14 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin {
 	function imagewatermark($src_img, $src_width, $src_height) {
         global $conf;
 		// Create Object
-		$marked = imagecreatetruecolor($src_width, $src_height);
-		
+		$marked = $src_img;
+		//$marked = imagecreatetruecolor($src_width, $src_height);
+
 		// Copy Source
-		imagecopy($marked, $src_img, 0, 0, 0, 0, $src_width, $src_height);
-	
+		//imagecopy($marked, $src_img, 0, 0, 0, 0, $src_width, $src_height);
+		imagealphablending($marked, true);
+		imagesavealpha($marked, true);
+		
 			$watermark =imagecreatefrompng($this->getConf('watermark_path'));//'../plugins/livemark/livemark.png');
 
 			$size=$this->getConf('size')/100;
@@ -106,3 +109,4 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin {
 		return $marked;
 	}
 }
+
