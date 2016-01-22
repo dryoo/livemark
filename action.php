@@ -15,7 +15,7 @@ require_once(DOKU_PLUGIN.'action.php');
 
 class action_plugin_livemark extends DokuWiki_Action_Plugin {
 
-	function register(&$controller) {
+	function register(Doku_Event_Handler $controller) {
 		if ( isset($_REQUEST['i']) ) { return; }
 		$controller->register_hook('MEDIA_SENDFILE', 'BEFORE', $this, 'livemark__livemark');
 	}
