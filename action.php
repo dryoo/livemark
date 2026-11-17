@@ -1,112 +1,257 @@
 <?php
 /** LiveMark dokuwiki plugin
- * 
+ *
  * @license    GPL 2 (http://www.gnu.org/licenses/gpl.html)
  * @author     s c yoo <dryoo@live.com>
  * url    http://openwiki.kr/tech/livemark
- * 
- * bASED ON iReflect Plugin https://github.com/i-net-software/dokuwiki-plugin-reflect
+ *
+ * based on iReflect Plugin https://github.com/i-net-software/dokuwiki-plugin-reflect
+ *
+ * 2026-11 fix: cache is written atomically (tmp+rename), cache is actually reused,
+ * the watered file is served on warm cache too, EXIF orientation is baked in
+ * before stripping, and ICC profile is preserved.
  */
 
 // must be run within Dokuwiki
-if(!defined('DOKU_INC')) die();
-if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
-require_once(DOKU_PLUGIN.'action.php');
+if (!defined('DOKU_INC')) die();
+if (!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN', DOKU_INC . 'lib/plugins/');
+require_once(DOKU_PLUGIN . 'action.php');
 
-class action_plugin_livemark extends DokuWiki_Action_Plugin {
+class action_plugin_livemark extends DokuWiki_Action_Plugin
+{
+    public function register(Doku_Event_Handler $controller)
+    {
+        if (isset($_REQUEST['i'])) {
+            return;
+        }
+        $controller->register_hook('MEDIA_SENDFILE', 'BEFORE', $this, 'livemark__livemark');
+    }
 
-	function register(Doku_Event_Handler $controller) {
-		if ( isset($_REQUEST['i']) ) { return; }
-		$controller->register_hook('MEDIA_SENDFILE', 'BEFORE', $this, 'livemark__livemark');
-	}
+    public function livemark__livemark(&$event, $args)
+    {
+        if (!extension_loaded('imagick')) {
+            return;
+        }
 
-	function livemark__livemark(&$event, $args) {
-		if (extension_loaded('gd') == false && !@dl('gd.so')) { return; }
-		$data = $event->data;
-		if ($data['ext']=='jpg' ||  $data['ext']=='png') 
-		{
-        	$ext=$data['ext'];
-			$cacheFile = getCacheName($data['file'],".media.watermark.$ext");
-			$mtime = @filemtime($cacheFile); // 0 if not exists
-			$cache = $data['cache'];
-			
-			if( ($mtime == 0) ||           // cache does not exist
-				($mtime < time()-$cache)   // 'recache' and cache has expired
-			){
-				if ( $this->create_watermark_image( $data, $cacheFile ) ) {
-					$data['orig'] = $data['file'];
-					$data['file'] = $cacheFile;
-					list($data['ext'],$data['mime'],$data['download']) = mimetype($cacheFile);
-					$event->data = $data;
-				}
-			}
-		}
-	}
-	
-	function create_watermark_image( $data, $cache_path ) {
-        global $conf;
-		$input = $data['file'];
+        $data = $event->data;
+        $src = $data['file'];
+        $ext = strtolower(pathinfo($src, PATHINFO_EXTENSION));
+        if ($ext === 'jpeg') {
+            $ext = 'jpg';
+        }
+        if ($ext !== 'jpg' && $ext !== 'png') {
+            return;
+        }
 
-		if ( !($image_details = getimagesize($input)) ) { return false; }
+        $cacheFile = getCacheName($src, '.media.watermark.' . $ext);
+        $srcMtime = @filemtime($src);
+        $mtime = @filemtime($cacheFile);
 
-		$width = $image_details[0];
-		$height = $image_details[1];
-		$type = $image_details[2];
-		$mime = $image_details['mime'];
+        // DokuWiki cache param: -1 = keep forever, 0 = never cache, > 0 = seconds
+        $ttl = (int) $data['cache'];
 
-        if ($width<$this->getConf('minsize')) return false;
-		//	Detect the source image format
-		switch ($type)
-		{
-			case 1://	GIF
-						$source = imagecreatefromgif($input); break;
-			case 2://	JPG
-						$source = imagecreatefromjpeg($input); break;
-			case 3://	PNG
-						$source = imagecreatefrompng($input); break;
-			default:	return false;
-		}
+        $stale = ($mtime === false)
+            || ($mtime < $srcMtime)
+            || ($ttl === 0)
+            || ($ttl > 0 && $mtime < time() - $ttl);
 
-		/*	Build the watermark image */
-		$output = $this->imagewatermark($source, $width, $height);
+        if ($stale) {
+            if (!$this->create_watermark_image($data, $cacheFile)) {
+                return; // fall back to the original file
+            }
+            // the request already stat'ed this path; drop the cached stat so
+            // Last-Modified/ETag describe the bytes we are about to send
+            clearstatcache(true, $cacheFile);
+            if (!is_file($cacheFile)) {
+                return;
+            }
+        }
 
-		/* Output our final Image */
-		if ( headers_sent() ) { return false; }
+        // warm cache must also be served, otherwise the original unmarked file leaks out
+        if (!is_file($cacheFile)) {
+            return;
+        }
 
-		//	If you'd rather output a JPEG instead of a PNG then pass the parameter 'jpeg' (no value needed) on the querystring
-		if ( substr($cache_path, -3) == 'png' ) {
-			imagepng($output, $cache_path, intval($conf['jpg_quality'] / 11));
-		} else if ( substr($cache_path, -3) == 'jpg' ) {
-			$finaloutput = imagecreatetruecolor($width, $height);
-			imagecopy($finaloutput, $output, 0, 0, 0, 0, $width, $height);
-			imagejpeg($finaloutput, $cache_path, intval($conf['jpg_quality']));
-		}
-		imagedestroy($output);
-		return true;
-		}
-	
-	function imagewatermark($src_img, $src_width, $src_height) {
-        global $conf;
-		// Create Object
-		$marked = $src_img;
-		//$marked = imagecreatetruecolor($src_width, $src_height);
+        $data['file'] = $cacheFile;
+        $data['ext'] = $ext;
+        $data['mime'] = ($ext === 'png') ? 'image/png' : 'image/jpeg';
+        $event->data = $data;
+    }
 
-		// Copy Source
-		//imagecopy($marked, $src_img, 0, 0, 0, 0, $src_width, $src_height);
-		imagealphablending($marked, true);
-		imagesavealpha($marked, true);
-		
-			$watermark =imagecreatefrompng($this->getConf('watermark_path'));//'../plugins/livemark/livemark.png');
+    /**
+     * Resolve the configured watermark path regardless of the current working directory.
+     */
+    protected function watermark_file()
+    {
+        $p = $this->getConf('watermark_path');
+        if (!$p) {
+            $p = 'livemark.png';
+        }
+        if ($p[0] === '/') {
+            return is_file($p) ? $p : null;
+        }
+        $candidates = [
+            DOKU_INC . 'lib/exe/' . $p,          // legacy relative cwd
+            DOKU_INC . 'lib/' . ltrim($p, './'), // ../plugins/x -> lib/plugins/x
+            __DIR__ . '/' . basename($p),
+        ];
+        foreach ($candidates as $candidate) {
+            $real = realpath($candidate);
+            if ($real && is_file($real)) {
+                return $real;
+            }
+        }
+        return null;
+    }
 
-			$size=$this->getConf('size')/100;
-			$ratio=$src_width/imagesx($watermark)*$size;
-		    $watermark_width = imagesx($watermark)*$ratio;  
-	        $watermark_height = imagesy($watermark)*$ratio;  
-			$dest_x = ($src_width - $watermark_width)/2-$src_width*(0.5-$this->getConf('horizontal')/100);  
-			$dest_y = ($src_height - $watermark_height)/2-$src_height*(0.5-$this->getConf('vertical')/100);  
-			imagecopyresampled($marked, $watermark,  $dest_x, $dest_y, 0, 0, $watermark_width, $watermark_height, imagesx($watermark),  imagesy($watermark));
-		 	 	
-		return $marked;
-	}
+    /**
+     * Bake EXIF orientation into pixels; autoOrientImage() is missing in older imagick builds.
+     */
+    protected function orient_image(Imagick $image)
+    {
+        if (method_exists($image, 'autoOrientImage')) {
+            try {
+                $image->autoOrientImage();
+                return;
+            } catch (Exception $e) {
+                // fall through to the manual path
+            }
+        }
+
+        $bg = ($image->getImageFormat() === 'PNG') ? 'none' : 'white';
+        if (!method_exists($image, 'getImageOrientation')) {
+            return;
+        }
+        switch ($image->getImageOrientation()) {
+            case Imagick::ORIENTATION_TOPLEFT:
+                return;
+            case Imagick::ORIENTATION_TOPRIGHT:
+                $image->flopImage();
+                break;
+            case Imagick::ORIENTATION_BOTTOMRIGHT:
+                $image->rotateImage($bg, 180);
+                break;
+            case Imagick::ORIENTATION_BOTTOMLEFT:
+                $image->flopImage();
+                $image->rotateImage($bg, 180);
+                break;
+            case Imagick::ORIENTATION_LEFTTOP:
+                $image->transposeImage();
+                break;
+            case Imagick::ORIENTATION_RIGHTTOP:
+                $image->rotateImage($bg, 90);
+                break;
+            case Imagick::ORIENTATION_RIGHTBOTTOM:
+                $image->transverseImage();
+                break;
+            case Imagick::ORIENTATION_LEFTBOTTOM:
+                $image->rotateImage($bg, -90);
+                break;
+        }
+        $image->setImageOrientation(Imagick::ORIENTATION_TOPLEFT);
+    }
+
+    protected function create_watermark_image($data, $cache_path)
+    {
+        $input = $data['file'];
+
+        try {
+            $image = new Imagick($input);
+
+            if ($image->getImageWidth() < (int) $this->getConf('minsize')) {
+                $image->clear();
+                return false;
+            }
+
+            // bake EXIF rotation into pixels before stripImage() drops the tag
+            $this->orient_image($image);
+
+            $wm_file = $this->watermark_file();
+            if (!$wm_file) {
+                $image->clear();
+                return false;
+            }
+
+            $watermark = new Imagick($wm_file);
+
+            // opacity (%) applied to the alpha channel
+            $opacity = $this->getConf('opacity');
+            if ($opacity === false || $opacity === null || $opacity === '') {
+                $opacity = 100; // unset means fully opaque, not invisible
+            }
+            $opacity = (float) $opacity;
+            if ($opacity < 100) {
+                $watermark->evaluateImage(
+                    Imagick::EVALUATE_MULTIPLY,
+                    max(0.0, $opacity / 100),
+                    Imagick::CHANNEL_ALPHA
+                );
+            }
+
+            $width = $image->getImageWidth();
+            $height = $image->getImageHeight();
+
+            // watermark is % of the image width
+            $size = (float) $this->getConf('size') / 100;
+            $wm_width = $watermark->getImageWidth();
+            $wm_height = $watermark->getImageHeight();
+            $scale = ($width * $size) / $wm_width;
+
+            $wm_new_width = max(1, (int) round($wm_width * $scale));
+            $wm_new_height = max(1, (int) round($wm_height * $scale));
+            $watermark->resizeImage($wm_new_width, $wm_new_height, Imagick::FILTER_LANCZOS, 1);
+
+            $horizontal = (float) $this->getConf('horizontal');
+            $vertical = (float) $this->getConf('vertical');
+            $dest_x = (int) round(($width - $wm_new_width) / 2 - $width * (0.5 - $horizontal / 100));
+            $dest_y = (int) round(($height - $wm_new_height) / 2 - $height * (0.5 - $vertical / 100));
+
+            $image->compositeImage($watermark, Imagick::COMPOSITE_OVER, $dest_x, $dest_y);
+
+            $ext = ($image->getImageFormat() === 'PNG') ? 'png' : 'jpg';
+            $icc = null;
+            try {
+                $icc = $image->getImageProfile('icc'); // throws when the profile is absent
+            } catch (Exception $e) {
+                $icc = null;
+            }
+            $image->stripImage();
+            if ($icc) {
+                $image->profileImage('icc', $icc);
+            }
+
+            if ($ext === 'png') {
+                $image->setImageFormat('png');
+            } else {
+                $quality = (int) $this->getConf('quality');
+                if ($quality < 1) {
+                    $quality = 85;
+                }
+                $image->setImageFormat('jpeg');
+                $image->setImageCompression(Imagick::COMPRESSION_JPEG);
+                $image->setImageCompressionQuality($quality);
+            }
+
+            // atomic publish: never let a reader see a half written file
+            $tmp = $cache_path . '.' . getmypid() . '.tmp';
+            $written = $image->writeImage($tmp);
+            $image->clear();
+            $watermark->clear();
+
+            if (!$written || !is_file($tmp) || filesize($tmp) === 0) {
+                @unlink($tmp);
+                return false;
+            }
+            @chmod($tmp, 0644);
+            if (!@rename($tmp, $cache_path)) {
+                @unlink($tmp);
+                return false;
+            }
+
+            return true;
+        } catch (Exception $e) {
+            msg('Imagick error: ' . $e->getMessage(), -1);
+            return false;
+        }
+    }
 }
-
