@@ -39,7 +39,7 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin
         if ($ext === 'jpeg') {
             $ext = 'jpg';
         }
-        if ($ext !== 'jpg' && $ext !== 'png') {
+        if (!in_array($ext, ['jpg', 'png', 'webp'], true)) {
             return;
         }
 
@@ -74,7 +74,8 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin
 
         $data['file'] = $cacheFile;
         $data['ext'] = $ext;
-        $data['mime'] = ($ext === 'png') ? 'image/png' : 'image/jpeg';
+        $mimes = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+        $data['mime'] = $mimes[$ext];
         $event->data = $data;
     }
 
@@ -118,7 +119,7 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin
             }
         }
 
-        $bg = ($image->getImageFormat() === 'PNG') ? 'none' : 'white';
+        $bg = in_array($image->getImageFormat(), ['PNG', 'WEBP'], true) ? 'none' : 'white';
         if (!method_exists($image, 'getImageOrientation')) {
             return;
         }
@@ -159,6 +160,12 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin
             $image = new Imagick($input);
 
             if ($image->getImageWidth() < (int) $this->getConf('minsize')) {
+                $image->clear();
+                return false;
+            }
+
+            // never flatten an animated image into a single frame
+            if ($image->getNumberImages() > 1) {
                 $image->clear();
                 return false;
             }
@@ -208,7 +215,8 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin
 
             $image->compositeImage($watermark, Imagick::COMPOSITE_OVER, $dest_x, $dest_y);
 
-            $ext = ($image->getImageFormat() === 'PNG') ? 'png' : 'jpg';
+            $format = strtoupper($image->getImageFormat());
+            $ext = $format === 'PNG' ? 'png' : ($format === 'WEBP' ? 'webp' : 'jpg');
             $icc = null;
             try {
                 $icc = $image->getImageProfile('icc'); // throws when the profile is absent
@@ -222,6 +230,13 @@ class action_plugin_livemark extends DokuWiki_Action_Plugin
 
             if ($ext === 'png') {
                 $image->setImageFormat('png');
+            } elseif ($ext === 'webp') {
+                $quality = (int) $this->getConf('quality');
+                if ($quality < 1) {
+                    $quality = 85;
+                }
+                $image->setImageFormat('webp');
+                $image->setImageCompressionQuality($quality);
             } else {
                 $quality = (int) $this->getConf('quality');
                 if ($quality < 1) {
